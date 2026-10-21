@@ -820,6 +820,15 @@ body.v81-nonowner #dashCombinedPanel{display:none!important}
 <div class="panel"><div id="receivableTable"></div></div>
 </section>
 
+<section class="page" id="Pesanan Indent">
+<h1>Pesanan Indent / Pre-Order</h1>
+<div class="sub">Barang yang terjual tapi stoknya belum cukup saat itu — tercatat di sini sampai dipesan ke supplier &amp; dikirim ke pelanggan.</div>
+<div class="panel">
+<label>Filter Status<select id="preOrderStatusFilter" onchange="renderPreOrders()"><option value="">Semua</option><option>Menunggu Dipesan</option><option>Sudah Dipesan ke Supplier</option><option>Selesai / Terkirim</option></select></label>
+<div id="preOrderTable" style="margin-top:12px"></div>
+</div>
+</section>
+
 
 <section class="page" id="Retur">
 <h1>Retur & Tukar Barang</h1>
@@ -1435,7 +1444,7 @@ try{
 }catch(e){console.error("Gagal inisialisasi Firebase:",e)}
 </script>
 <script>
-const menus=["Dashboard","Kasir","Produk","Supplier","Pembelian","Hutang Supplier","Pelanggan","Piutang","Retur","Laba Transaksi","Laporan","Pengaturan"];
+const menus=["Dashboard","Kasir","Produk","Supplier","Pembelian","Hutang Supplier","Pelanggan","Piutang","Pesanan Indent","Retur","Laba Transaksi","Laporan","Pengaturan"];
 document.getElementById("nav").innerHTML=menus.map((m,i)=>`<button class="${i===0?'active':''}" onclick="go('${m}',this)">${m}</button>`).join("");
 function go(id,b){if(typeof v80CanPage==="function"&&!v80CanPage(id)){alert("Akses halaman ini tidak diberikan oleh Owner.");return}document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));document.getElementById(id).classList.add("active");document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");refreshAll();if(typeof v80ApplyPermissions==="function")v80ApplyPermissions()}
 const rp=n=>"Rp "+Number(n||0).toLocaleString("id-ID");
@@ -1445,7 +1454,7 @@ const load=(k,d)=>JSON.parse(localStorage.getItem(k)||"null")||d;
  const EPOCH="go-live-2026-09";
  try{
   if(localStorage.getItem("of_data_epoch")!==EPOCH){
-   ["of_suppliers_v3","of_products_v3","of_transactions_v3","of_purchases_v5","of_customers_v6","of_finance_expenses_v26","of_opening_cash_v26","of_other_income_v26","of_sales_returns_v32","of_purchase_returns_v32"].forEach(k=>localStorage.removeItem(k));
+   ["of_suppliers_v3","of_products_v3","of_transactions_v3","of_purchases_v5","of_customers_v6","of_finance_expenses_v26","of_opening_cash_v26","of_other_income_v26","of_sales_returns_v32","of_purchase_returns_v32","of_preorders_v1"].forEach(k=>localStorage.removeItem(k));
    localStorage.setItem("of_data_epoch",EPOCH);
   }
  }catch(e){}
@@ -1461,6 +1470,7 @@ let otherIncomeRecords=load("of_other_income_v26",[]);
 let salesReturns=load("of_sales_returns_v32",[]);
 let purchaseReturns=load("of_purchase_returns_v32",[]);
 let appUsersList=[];
+let preOrders=load("of_preorders_v1",[]);
 let _dbDownloads=null;
 (async function initDownloadsCapability(){
  try{
@@ -1597,7 +1607,8 @@ const _syncOtherIncome=makeDbCollectionSync("otherIncome",()=>otherIncomeRecords
 const _syncSalesReturns=makeDbCollectionSync("salesReturns",()=>salesReturns,v=>{salesReturns=v});
 const _syncPurchaseReturns=makeDbCollectionSync("purchaseReturns",()=>purchaseReturns,v=>{purchaseReturns=v});
 const _syncAppUsers=makeDbCollectionSync("appUsers",()=>appUsersList,v=>{appUsersList=v});
-const _allDbSyncs=[_syncSuppliers,_syncProducts,_syncTransactions,_syncPurchases,_syncCustomers,_syncFinanceExpenses,_syncOpeningCash,_syncOtherIncome,_syncSalesReturns,_syncPurchaseReturns,_syncAppUsers];
+const _syncPreOrders=makeDbCollectionSync("preOrders",()=>preOrders,v=>{preOrders=v});
+const _allDbSyncs=[_syncSuppliers,_syncProducts,_syncTransactions,_syncPurchases,_syncCustomers,_syncFinanceExpenses,_syncOpeningCash,_syncOtherIncome,_syncSalesReturns,_syncPurchaseReturns,_syncAppUsers,_syncPreOrders];
 function syncProductsToDb(){return _syncProducts.sync()}
 function _removeProductFromDb(id){return _syncProducts.remove(id)}
 let _allDbSyncsStarted=false;
@@ -1630,6 +1641,8 @@ function persist(){
   _syncSalesReturns.sync();
   localStorage.setItem("of_purchase_returns_v32",JSON.stringify(purchaseReturns));
   _syncPurchaseReturns.sync();
+  localStorage.setItem("of_preorders_v1",JSON.stringify(preOrders));
+  _syncPreOrders.sync();
   localStorage.setItem("of_settings_v3",JSON.stringify(settings));
   return true;
  }catch(err){
@@ -1787,34 +1800,34 @@ ${settings.flags?.cashierSeeCost?`<div class="muted" style="margin-top:4px"><b>M
 </div>`).join("")}
 const productsEl=document.getElementById("products");
 function addToCart(id){
- const p=products.find(x=>x.id===id);if(!p||variantTotal(p)<=0){alert("Stok habis");return}
- const vs=(p.variants||[]).filter(v=>Number(v.stock)>0);
+ const p=products.find(x=>x.id===id);if(!p)return;
+ const vs=p.variants||[];
  if(vs.length){
    openVariantPickModal(id);
  }else{
-   const c=cart.find(x=>x.id===id&&!x.variantId);if(c){if(c.qty>=p.stock){alert("Qty melebihi stok");return}c.qty++}else cart.push({...p,qty:1});
+   const c=cart.find(x=>x.id===id&&!x.variantId);if(c)c.qty++;else cart.push({...p,qty:1});
  }
  renderCart();
 }
 function openVariantPickModal(id){
  const p=products.find(x=>x.id===id);if(!p)return;
- const vs=(p.variants||[]).filter(v=>Number(v.stock)>0);
- if(!vs.length){alert("Stok varian habis.");return}
+ const vs=p.variants||[];
+ if(!vs.length){alert("Produk ini belum punya varian.");return}
  variantPickTitle.textContent="Pilih Varian — "+p.name;
- variantPickList.innerHTML=vs.map(v=>`<button class="btn alt" style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center" onclick="chooseVariant(${p.id},'${v.id}')"><span>${v.size} / ${v.color}</span><span class="muted">Stok ${v.stock} · ${rp(Number(v.price??p.price??0))}${settings.flags?.cashierSeeCost?` · Modal ${rp(Number(v.cost??p.cost??0))}`:""}</span></button>`).join("");
+ variantPickList.innerHTML=vs.map(v=>`<button class="btn alt" style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center" onclick="chooseVariant(${p.id},'${v.id}')"><span>${v.size} / ${v.color}</span><span class="muted">${Number(v.stock)>0?`Stok ${v.stock}`:`<b style="color:#b45309">Stok habis — bisa Indent</b>`} · ${rp(Number(v.price??p.price??0))}${settings.flags?.cashierSeeCost?` · Modal ${rp(Number(v.cost??p.cost??0))}`:""}</span></button>`).join("");
  variantPickModal.classList.add("show");
 }
 function chooseVariant(id,variantId){
  const p=products.find(x=>x.id===id);if(!p)return;
  const v=(p.variants||[]).find(x=>String(x.id)===String(variantId));if(!v){alert("Pilihan varian tidak valid.");return}
  const key=p.id+"-"+v.id,c=cart.find(x=>x.variantKey===key);
- if(c){if(c.qty>=v.stock){alert("Qty melebihi stok varian.");closeModal("variantPickModal");return}c.qty++}
+ if(c)c.qty++;
  else cart.push({...p,stock:v.stock,cost:Number(v.cost??p.cost??0),price:Number(v.price??p.price??0),qty:1,variantKey:key,variantId:v.id,variantSize:v.size,variantColor:v.color,name:p.name+" — "+v.size+" / "+v.color});
  closeModal("variantPickModal");
  renderCart();
 }
-function changeQty(id,v){const c=cart.find(x=>x.id===id||x.variantKey===String(id)),p=c&&products.find(x=>x.id===c.id);if(!c||!p)return;c.qty=Math.max(1,Math.min(Number(v||1),c.stock));renderCart()}
-function changeQtyByIndex(i,v){const c=cart[i];if(!c)return;c.qty=Math.max(1,Math.min(Number(v||1),Number(c.stock||0)));renderCart()}
+function changeQty(id,v){const c=cart.find(x=>x.id===id||x.variantKey===String(id));if(!c)return;c.qty=Math.max(1,Number(v||1));renderCart()}
+function changeQtyByIndex(i,v){const c=cart[i];if(!c)return;c.qty=Math.max(1,Number(v||1));renderCart()}
 function removeCartByIndex(i){cart.splice(i,1);renderCart()}
 function changeCartPriceByIndex(i,v){if(!canManualPrice()){alert("Input harga jual manual dinonaktifkan di Pengaturan.");return}const c=cart[i];if(!c)return;c.price=Math.max(0,Number(v||0));c.manualPrice=true;renderCart()}
 function removeCart(id){cart=cart.filter(x=>x.id!==id);renderCart()}
@@ -1838,7 +1851,12 @@ function addServiceToCart(){
  closeModal("serviceModal");renderCart();
 }
 function renderCart(){
-cartDiv.innerHTML=cart.length?cart.map(c=>`<div class="row"><div style="flex:1"><b>${c.name}</b><div class="muted" style="margin-top:5px">Qty <input class="qty" type="number" min="1" max="${c.stock}" value="${c.qty}" onchange="changeQtyByIndex(${cart.indexOf(c)},this.value)"></div>${canManualPrice()?`<div class="muted" style="margin-top:7px">Harga Jual Transaksi <input type="number" min="0" value="${c.price}" onchange="changeCartPriceByIndex(${cart.indexOf(c)},this.value)" style="width:145px;padding:7px"></div>`:`<div class="muted" style="margin-top:7px">Harga Jual: ${rp(c.price)} <span class="badge info">Terkunci</span></div>`}${settings.flags?.cashierSeeCost?`<div class="muted" style="margin-top:5px"><b>Harga Modal:</b> ${rp(Number(c.cost||0))}</div>`:""}</div><div class="right"><b>${rp(c.price*c.qty)}</b>${c.manualPrice?'<div class="muted">Harga manual</div>':''}<br><button class="btn danger" style="padding:5px 8px;margin-top:5px" onclick="removeCartByIndex(${cart.indexOf(c)})">Hapus</button></div></div>`).join(""):"Belum ada barang";
+cartDiv.innerHTML=cart.length?cart.map(c=>{
+ const liveP=products.find(x=>x.id===c.id);
+ const liveAvail=c.isService?Infinity:(c.variantId?Number((liveP?.variants||[]).find(x=>String(x.id)===String(c.variantId))?.stock||0):Number(liveP?.stock||0));
+ const short=c.isService?0:Math.max(0,c.qty-liveAvail);
+ return `<div class="row"><div style="flex:1"><b>${c.name}</b><div class="muted" style="margin-top:5px">Qty <input class="qty" type="number" min="1" value="${c.qty}" onchange="changeQtyByIndex(${cart.indexOf(c)},this.value)"></div>${short>0?`<div style="margin-top:5px;color:#b45309"><b>⚠ Kurang ${short} pcs — sisanya jadi Pre-Order/Indent</b></div>`:""}${canManualPrice()?`<div class="muted" style="margin-top:7px">Harga Jual Transaksi <input type="number" min="0" value="${c.price}" onchange="changeCartPriceByIndex(${cart.indexOf(c)},this.value)" style="width:145px;padding:7px"></div>`:`<div class="muted" style="margin-top:7px">Harga Jual: ${rp(c.price)} <span class="badge info">Terkunci</span></div>`}${settings.flags?.cashierSeeCost?`<div class="muted" style="margin-top:5px"><b>Harga Modal:</b> ${rp(Number(c.cost||0))}</div>`:""}</div><div class="right"><b>${rp(c.price*c.qty)}</b>${c.manualPrice?'<div class="muted">Harga manual</div>':''}<br><button class="btn danger" style="padding:5px 8px;margin-top:5px" onclick="removeCartByIndex(${cart.indexOf(c)})">Hapus</button></div></div>`;
+}).join(""):"Belum ada barang";
 const sub=cart.reduce((a,c)=>a+c.price*c.qty,0),disc=Math.min(Number(discount.value||0),sub),tot=sub-disc,dp=Math.min(Number(downPayment.value||0),tot);
 subtotal.textContent=rp(sub);discountView.textContent=rp(disc);total.textContent=rp(tot);balance.textContent=rp(tot-dp)
 }
@@ -1864,22 +1882,77 @@ function updatePaymentDetail(){
  let opts=[];if(payment.value==="Finance")opts=settings.finance;else if(payment.value==="QRIS")opts=[settings.qris||"QRIS Toko"];else if(payment.value==="Kartu / EDC")opts=settings.edc||["EDC BCA","EDC Mandiri"];else opts=["-"];
  paymentDetail.innerHTML=opts.map(x=>`<option>${x}</option>`).join("");
 }
-function saveTransaction(){
+async function commitStockDeductionAtomic(cartItems){
+ // Mengurangi stok langsung di server (Firestore) di dalam satu transaksi atomik.
+ // Tidak pernah GAGAL cuma gara-gara stok kurang — kalau kurang, yang dipotong cuma
+ // sebanyak yang tersedia, sisanya dilaporkan sebagai "shortfall" (buat dicatat jadi
+ // Pesanan Indent). Ini juga yang mencegah 2 device jual barang sama di saat
+ // bersamaan sampai bikin stok minus tanpa ketahuan (race condition multi-device).
+ if(!_fbReady())return {ok:true,shortfalls:null}; // mode offline/lokal: caller pakai perhitungan lokal
+ try{
+  const db=firebase.firestore();
+  const shortfalls=[];
+  await db.runTransaction(async tx=>{
+   shortfalls.length=0;
+   const reads=new Map();
+   for(const c of cartItems){
+    if(c.isService)continue;
+    if(!reads.has(String(c.id))){
+     const ref=db.collection("products").doc(String(c.id));
+     const snap=await tx.get(ref);
+     if(!snap.exists)throw new Error("Produk \""+c.name+"\" tidak ditemukan di server (mungkin baru dihapus di device lain).");
+     reads.set(String(c.id),{ref,data:snap.data()});
+    }
+   }
+   for(const c of cartItems){
+    if(c.isService)continue;
+    const entry=reads.get(String(c.id)),data=entry.data;
+    if(c.variantId){
+     const v=(data.variants||[]).find(x=>String(x.id)===String(c.variantId));
+     const avail=v?Number(v.stock||0):0,deduct=Math.min(avail,c.qty),short=c.qty-deduct;
+     if(v)v.stock=avail-deduct;
+     data.stock=(data.variants||[]).reduce((a,x)=>a+Number(x.stock||0),0);
+     if(short>0)shortfalls.push({id:c.id,variantId:c.variantId,name:c.name,qty:short});
+    }else{
+     const avail=Number(data.stock||0),deduct=Math.min(avail,c.qty),short=c.qty-deduct;
+     data.stock=avail-deduct;
+     if(short>0)shortfalls.push({id:c.id,variantId:null,name:c.name,qty:short});
+    }
+   }
+   for(const [,entry] of reads)tx.set(entry.ref,entry.data);
+  });
+  return {ok:true,shortfalls};
+ }catch(e){return {ok:false,message:e?.message||String(e)}}
+}
+function localStockShortfalls(cartItems){
+ const out=[];
+ for(const c of cartItems){
+  if(c.isService)continue;
+  const p=products.find(x=>x.id===c.id);if(!p)continue;
+  let avail;
+  if(c.variantId){const v=(p.variants||[]).find(x=>String(x.id)===String(c.variantId));avail=v?Number(v.stock||0):0}
+  else avail=Number(p.stock||0);
+  const short=Math.max(0,c.qty-avail);
+  if(short>0)out.push({id:c.id,variantId:c.variantId||null,name:c.name,qty:short});
+ }
+ return out;
+}
+async function saveTransaction(){
  if(!cart.length){alert("Keranjang kosong");return}
- // v86: validate stock against the exact selected variant.
  for(const c of cart){
   if(c.isService)continue;
   const p=products.find(x=>x.id===c.id);
   if(!p){alert("Produk tidak ditemukan: "+c.name);return}
-  if(c.variantId){
-   const v=(p.variants||[]).find(x=>String(x.id)===String(c.variantId));
-   if(!v||Number(v.stock||0)<c.qty){alert("Stok varian tidak cukup untuk "+c.name);return}
-   c.cost=Number(v.cost??p.cost??0); // latest cost per selected variant
-  }else{
-   if(Number(p.stock||0)<c.qty){alert("Stok tidak cukup untuk "+c.name);return}
-   c.cost=Number(p.cost||0); // latest cost for non-variant product
-  }
+  c.cost=c.variantId?Number((p.variants||[]).find(x=>String(x.id)===String(c.variantId))?.cost??p.cost??0):Number(p.cost||0);
  }
+ const preCheckShortfalls=localStockShortfalls(cart);
+ if(preCheckShortfalls.length){
+  const list=preCheckShortfalls.map(s=>`- ${s.name}: kurang ${s.qty} pcs`).join("\n");
+  if(!confirm(`Stok sebagian barang tidak cukup:\n${list}\n\nLanjutkan sebagai Pre-Order/Indent? Kekurangannya otomatis dicatat di menu "Pesanan Indent" sampai barangnya datang dan dikirim ke pelanggan.`))return;
+ }
+ const atomicResult=await commitStockDeductionAtomic(cart);
+ if(!atomicResult.ok){alert("Transaksi dibatalkan: "+atomicResult.message);return}
+ const finalShortfalls=atomicResult.shortfalls!==null?atomicResult.shortfalls:preCheckShortfalls;
  const sub=cart.reduce((a,c)=>a+c.price*c.qty,0),disc=Math.min(Number(discount.value||0),sub),tot=sub-disc,dpInput=Math.min(Number(downPayment.value||0),tot);
  const isReceivableMethod=["COD","Kredit"].includes(payment.value);
  const dp=isReceivableMethod?dpInput:(dpInput===0?tot:dpInput),bal=Math.max(0,tot-dp);
@@ -1889,8 +1962,9 @@ function saveTransaction(){
   if(!a){alert("Pilih rekening bank Transfer. Tambahkan rekening di Pengaturan jika belum ada.");return}
   transferInfo={bankAccountId:a.id||"",bank:a.bank||"",account:a.account||"",accountName:a.name||""};
  }
+ const custId=Number(customer.value||0),custObj=customers.find(c=>c.id===custId);
  // c.cost below is the HPP snapshot. Future cost changes will not change this transaction.
- const trx={id:(settings.invoicePrefix||"INV")+"-"+Date.now(),date:new Date().toISOString(),customerId:Number(customer.value||0),customer:(customers.find(c=>c.id===Number(customer.value))?.name||"Umum"),customerPhone:(customers.find(c=>c.id===Number(customer.value))?.phone||"-"),customerAddress:(customers.find(c=>c.id===Number(customer.value))?.address||"-"),cashier:"Owner",payment:payment.value,detail:payment.value==="Transfer"?`${transferInfo.bank} — ${transferInfo.account} — ${transferInfo.accountName}`:paymentDetail.value,transferInfo,due:dueDate.value||"",subtotal:sub,discount:disc,total:tot,paid:dp,balance:bal,status:bal<=0?"Lunas":"Piutang",cost:cart.reduce((a,c)=>a+Number(c.cost||0)*c.qty,0),items:cart.map(c=>({id:c.id,name:c.name,sku:c.sku,qty:c.qty,price:c.price,cost:Number(c.cost||0),manualPrice:!!c.manualPrice,variantId:c.variantId||null,variantSize:c.variantSize||"",variantColor:c.variantColor||"",isService:!!c.isService,serviceType:c.serviceType||"",serviceNote:c.serviceNote||""}))};
+ const trx={id:(settings.invoicePrefix||"INV")+"-"+Date.now(),date:new Date().toISOString(),customerId:custId,customer:(custObj?.name||"Umum"),customerPhone:(custObj?.phone||"-"),customerAddress:(custObj?.address||"-"),cashier:"Owner",payment:payment.value,detail:payment.value==="Transfer"?`${transferInfo.bank} — ${transferInfo.account} — ${transferInfo.accountName}`:paymentDetail.value,transferInfo,due:dueDate.value||"",subtotal:sub,discount:disc,total:tot,paid:dp,balance:bal,status:bal<=0?"Lunas":"Piutang",cost:cart.reduce((a,c)=>a+Number(c.cost||0)*c.qty,0),items:cart.map(c=>({id:c.id,name:c.name,sku:c.sku,qty:c.qty,price:c.price,cost:Number(c.cost||0),manualPrice:!!c.manualPrice,variantId:c.variantId||null,variantSize:c.variantSize||"",variantColor:c.variantColor||"",isService:!!c.isService,serviceType:c.serviceType||"",serviceNote:c.serviceNote||"",preOrderQty:(finalShortfalls.find(s=>s.id===c.id&&String(s.variantId||"")===String(c.variantId||""))?.qty)||0}))};
  cart.forEach(c=>{
   if(c.isService)return;
   const p=products.find(p=>p.id===c.id);if(!p)return;
@@ -1900,7 +1974,12 @@ function saveTransaction(){
    p.stock=variantTotal(p);
   }else p.stock=Math.max(0,Number(p.stock||0)-c.qty);
  });
- transactions.unshift(trx);persist();customer.value="";dueDate.value="";clearCart();refreshAll();alert("Transaksi tersimpan. Stok sudah berkurang otomatis.");
+ transactions.unshift(trx);
+ finalShortfalls.forEach(s=>{
+  preOrders.unshift({id:"IND-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),date:new Date().toISOString(),invoiceId:trx.id,customerId:custId||null,customerName:trx.customer,productId:s.id,variantId:s.variantId,productName:s.name,qty:s.qty,status:"Menunggu Dipesan",orderedDate:"",deliveredDate:"",note:""});
+ });
+ persist();customer.value="";dueDate.value="";clearCart();refreshAll();
+ alert(finalShortfalls.length?`Transaksi tersimpan. ${finalShortfalls.length} barang dicatat sebagai Pre-Order/Indent (cek menu "Pesanan Indent").`:"Transaksi tersimpan. Stok sudah berkurang otomatis.");
 }
 
 function salesReturnSummaryForInvoice(invoiceId){const rs=salesReturns.filter(r=>String(r.invoiceId)===String(invoiceId));let returnValue=0,replacementValue=0,returnCost=0,replacementCost=0;rs.forEach(r=>{returnValue+=Number(r.returnValue||0);returnCost+=Number(r.returnCost||0);const xs=(r.replacements||[r.replacement]).filter(Boolean);replacementValue+=xs.reduce((a,x)=>a+Number(x.price||0)*Number(x.qty||0),0);replacementCost+=xs.reduce((a,x)=>a+Number(x.cost||0)*Number(x.qty||0),0)});return {rs,returnValue,replacementValue,returnCost,replacementCost,netAdjustment:replacementValue-returnValue}}
@@ -2678,6 +2757,58 @@ function renderReceivables(){
  </table>`:"Tidak ada piutang aktif.";
 }
 
+function renderPreOrders(){
+ const filter=document.getElementById("preOrderStatusFilter")?.value||"";
+ const list=preOrders.filter(x=>!filter||x.status===filter);
+ const daysSince=d=>Math.floor((Date.now()-new Date(d).getTime())/86400000);
+ document.getElementById("preOrderTable").innerHTML=list.length?`<table>
+ <tr><th>Tanggal Jual</th><th>Invoice</th><th>Pelanggan</th><th>Barang</th><th>Qty Kurang</th><th>Status</th><th>Aksi</th></tr>
+ ${list.map(x=>{
+  const waiting=x.status==="Menunggu Dipesan"?daysSince(x.date):0;
+  return `<tr>
+  <td>${new Date(x.date).toLocaleDateString("id-ID")}${waiting>=7?`<div class="muted" style="color:#b45309"><b>⚠ Sudah ${waiting} hari</b></div>`:""}</td>
+  <td>${x.invoiceId}</td>
+  <td>${x.customerName}</td>
+  <td>${x.productName}</td>
+  <td><b>${x.qty}</b></td>
+  <td>${x.status}${x.orderedDate?`<div class="muted">Dipesan: ${new Date(x.orderedDate).toLocaleDateString("id-ID")}</div>`:""}${x.deliveredDate?`<div class="muted">Selesai: ${new Date(x.deliveredDate).toLocaleDateString("id-ID")}</div>`:""}</td>
+  <td>
+  ${x.status==="Menunggu Dipesan"?`<button class="btn alt" onclick="markPreOrderOrdered('${x.id}')">Tandai Sudah Dipesan ke Supplier</button>`:""}
+  ${x.status==="Sudah Dipesan ke Supplier"?`<button class="btn green" onclick="markPreOrderDelivered('${x.id}')">Tandai Selesai / Terkirim</button>`:""}
+  <button class="btn danger" style="margin-top:5px" onclick="deletePreOrderEntry('${x.id}')">Hapus Catatan</button>
+  </td>
+  </tr>`;
+ }).join("")}
+ </table>`:"Tidak ada pesanan indent.";
+}
+function markPreOrderOrdered(id){
+ const x=preOrders.find(p=>p.id===id);if(!x)return;
+ if(!confirm(`Tandai barang "${x.productName}" untuk invoice ${x.invoiceId} sudah dipesan ke supplier?`))return;
+ x.status="Sudah Dipesan ke Supplier";x.orderedDate=new Date().toISOString();
+ persist();refreshAll();
+}
+function markPreOrderDelivered(id){
+ const x=preOrders.find(p=>p.id===id);if(!x)return;
+ const p=products.find(pr=>pr.id===x.productId);
+ if(!p){alert("Produk sudah tidak ada di Master Produk.");return}
+ let avail;
+ if(x.variantId){const v=(p.variants||[]).find(vv=>String(vv.id)===String(x.variantId));avail=v?Number(v.stock||0):0}
+ else avail=Number(p.stock||0);
+ if(avail<x.qty){alert(`Stok "${x.productName}" di Master Produk baru ${avail}, belum cukup buat nyelesain indent ${x.qty} pcs. Terima barang dari PO dulu baru tandai selesai di sini.`);return}
+ if(!confirm(`Tandai "${x.productName}" (${x.qty} pcs) untuk invoice ${x.invoiceId} sudah diterima & dikirim ke pelanggan? Stok akan dikurangi ${x.qty} pcs sekarang.`))return;
+ if(x.variantId){
+  const v=(p.variants||[]).find(vv=>String(vv.id)===String(x.variantId));
+  if(v)v.stock=Number(v.stock)-x.qty;
+  p.stock=variantTotal(p);
+ }else p.stock=Number(p.stock)-x.qty;
+ x.status="Selesai / Terkirim";x.deliveredDate=new Date().toISOString();
+ persist();refreshAll();
+}
+function deletePreOrderEntry(id){
+ if(!confirm("Hapus catatan pesanan indent ini? (Tidak mempengaruhi stok ataupun invoice-nya)"))return;
+ preOrders=preOrders.filter(p=>p.id!==id);
+ persist();_syncPreOrders.remove(id);refreshAll();
+}
 function payReceivable(id){
  const t=transactions.find(x=>x.id===id);if(!t)return;
  receivablePaymentInvoiceId.value=id;
@@ -3868,9 +3999,9 @@ function v76Allowed(k){return v76CurrentUser?.role==="Owner"||!!v76CurrentUser?.
 function v80PageList(){
  if(!v76CurrentUser)return [];
  if(v76CurrentUser.role==="Owner")return menus.slice();
- if(v76CurrentUser.role==="Admin")return ["Dashboard","Kasir","Produk","Supplier","Pembelian","Pelanggan","Piutang","Retur","Laporan"];
+ if(v76CurrentUser.role==="Admin")return ["Dashboard","Kasir","Produk","Supplier","Pembelian","Pelanggan","Piutang","Pesanan Indent","Retur","Laporan"];
  const hasReport=Object.values(v76CurrentUser.report||{}).some(Boolean);
- return ["Dashboard","Kasir","Pelanggan","Piutang"].concat(hasReport?["Laporan"]:[]);
+ return ["Dashboard","Kasir","Pelanggan","Piutang","Pesanan Indent"].concat(hasReport?["Laporan"]:[]);
 }
 function v80CanPage(id){return v80PageList().includes(id)}
 
@@ -4186,7 +4317,7 @@ async function resetAll(){
  if(!confirm("Yakin hapus SEMUA data? Tindakan ini menghapus transaksi, piutang, pembelian/hutang supplier, retur, produk, pelanggan, supplier dan pengaturan — baik di HP ini MAUPUN di database bersama (Firebase). Akun login (Owner/Admin/Kasir) TIDAK ikut terhapus. Tindakan ini TIDAK BISA dibatalkan."))return;
  if(!confirm("Konfirmasi sekali lagi: semua data akan hilang permanen dari semua perangkat. Lanjutkan?"))return;
  ["of_suppliers_v3","of_products_v3","of_transactions_v3","of_purchases_v5","of_customers_v6","of_settings_v3",
- "of_finance_expenses_v26","of_opening_cash_v26","of_other_income_v26","of_sales_returns_v32","of_purchase_returns_v32"].forEach(k=>localStorage.removeItem(k));
+ "of_finance_expenses_v26","of_opening_cash_v26","of_other_income_v26","of_sales_returns_v32","of_purchase_returns_v32","of_preorders_v1"].forEach(k=>localStorage.removeItem(k));
  if(_fbReady()){
   alert("Menghapus data di database bersama, mohon tunggu...");
   try{
@@ -4300,7 +4431,7 @@ function accountingSnapshot(){
  return {receivable,supplierDebt};
 }
 
-function refreshAll(){if(!window._migratedOldReplacementReturnsOnce){window._migratedOldReplacementReturnsOnce=true;migrateOldReplacementReturns()}accountingReconcile();renderDataBackupStatus();populateSupplierSelect();populatePoSelectors();populateCustomerSelect();renderCategoryButtons();renderProductTable();renderSupplierTable();renderCustomerTable();renderProducts();renderCart();renderTransactions();renderPurchases();renderSupplierDebts();renderReceivables();populateReturnSelectors();renderSalesReturns();renderPurchaseReturns();renderReport();renderProfitTransactions();renderDashboard();loadSettingsUI();updatePaymentDetail()}
+function refreshAll(){if(!window._migratedOldReplacementReturnsOnce){window._migratedOldReplacementReturnsOnce=true;migrateOldReplacementReturns()}accountingReconcile();renderDataBackupStatus();populateSupplierSelect();populatePoSelectors();populateCustomerSelect();renderCategoryButtons();renderProductTable();renderSupplierTable();renderCustomerTable();renderProducts();renderCart();renderTransactions();renderPurchases();renderSupplierDebts();renderReceivables();renderPreOrders();populateReturnSelectors();renderSalesReturns();renderPurchaseReturns();renderReport();renderProfitTransactions();renderDashboard();loadSettingsUI();updatePaymentDetail()}
 searchProduct.oninput=renderProducts;
 processMaturedGiros();
 accountingReconcile();
